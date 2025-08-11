@@ -18,6 +18,8 @@ from langgraph.store.memory import InMemoryStore
 from dotenv import load_dotenv
 load_dotenv()
 
+
+# Load PDF 
 file_path="./data"
 
 loader = DirectoryLoader(file_path, glob="**/*.pdf", use_multithreading=True, loader_cls=PyPDFLoader)
@@ -31,6 +33,8 @@ splitter = RecursiveCharacterTextSplitter(
 
 all_splite = splitter.split_documents(docs)
 
+
+# LLM 
 if not os.environ.get("GOOGLE_API_KEY"):
   os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter API key for Google Gemini: ")
 
@@ -54,12 +58,16 @@ vector_store = Chroma(
 
 _ = vector_store.add_documents(documents=all_splite)
 
+
+# LangGraph
 class State(TypedDict):
   question: str
   context: List[Document]
   answer: str
   messages: Annotated[List[BaseMessage], "conversation messages"]
 
+
+# Rectriver Function 
 def retrieve(state: State):
   retrieve_docs = vector_store.similarity_search(state["question"])
   return {"context": retrieve_docs}
@@ -72,12 +80,15 @@ Context: {context}
 Answer:"""
 prompt = PromptTemplate.from_template(template)
 
+
+# Generator Function 
 def generate(state: State):
   docs_content = "\n\n".join(doc.page_content for doc in state["context"])
   messages = prompt.invoke({"question": state["question"], "context": docs_content})
   response = llm.invoke(messages)
   return {"answer": response.content}
 
+# Workflow 
 graph_builder = StateGraph(State)
 graph_builder.add_sequence([retrieve, generate])
 graph_builder.add_edge(START, "retrieve")
@@ -90,6 +101,8 @@ graph = graph_builder.compile(checkpointer=memory, store=store)
 
 thread_id = str(uuid.uuid4())
 
+
+# Stream Function 
 def stream_graph_update(user_input: str):
    config = {"configurable": {"thread_id": thread_id}}
    for event in graph.stream({"question": user_input, "messages": [HumanMessage(content=user_input)]}, config=config):
@@ -98,6 +111,7 @@ def stream_graph_update(user_input: str):
             print("Assistant: ", value['answer'])
 
 
+# User Function 
 while True:
     user_input = input("User: ")
     if user_input.lower() in ["quit", "by", "bye"]:
